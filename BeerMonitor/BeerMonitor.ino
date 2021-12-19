@@ -100,12 +100,13 @@ void setup() {
   CARRIER_CASE = true;
 
   carrier.begin();
-  delay(1000);
   carrier.display.setRotation(0);
   carrier.leds.setBrightness(2);
-
+  delay(5000);
+  
   sensors.begin();
-
+  delay(5000);
+  
   mqttClient.setServer(SECRET_BROKER, 1883);
 
   WiFi.begin(SECRET_SSID, SECRET_PASSWD);
@@ -349,12 +350,12 @@ void failSafe() {
 }
 
 void updateBeerTemperature(float Temperature, struct brew *brew) {
-  if (Temperature < brew->mintemp ) {
+  if (Temperature < brew->mintemp) {
     cooler_control = off;  // Make sure cooler is off
     heater_control = on;
     displayScreen = 0;
   }
-  else if (Temperature > brew->maxtemp ) {
+  else if (Temperature > brew->maxtemp) {
     heater_control = off;  // Make sure heater is off
     cooler_control = on;
     displayScreen = 2;
