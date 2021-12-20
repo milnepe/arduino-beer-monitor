@@ -22,13 +22,13 @@ int port = 1883;
 
 struct brew {
   const char *name;
-  float mintemp;
-  float maxtemp;
+  int mintemp;
+  int maxtemp;
 };
 
-struct brew ferment = {"Ferment", 18, 21};
-struct brew finish = {"Finish", 10, 15};
-struct brew test = {"Test", 22, 24};
+struct brew ferment = {"Ferment", 180, 210};
+struct brew finish = {"Finish", 100, 150};
+struct brew test = {"Test", 220, 240};
 struct brew *brewPtr = &ferment;  // Pointer to a brew
 
 MKRIoTCarrier carrier;
@@ -72,7 +72,7 @@ struct thermometers {
 
 struct thermometers myThermometers;
 
-// Store temeratures for averages
+// Store temperatures for statistics
 int beerTemperatures[SAMPLES];
 int airTemperatures[SAMPLES];
 
@@ -90,9 +90,9 @@ char buffer[128];
 
 void setup() {
   Serial.begin(9600);
-    while (!Serial) {
-      ; // wait for serial port to connect
-    }
+  while (!Serial) {
+    ; // wait for serial port to connect
+  }
   Serial.println("Beer brewer test!");
   CARRIER_CASE = true;
 
@@ -204,24 +204,27 @@ void loop() {
             airTemperatures[i] = airTemperatures[i - 1];
           }
           beerTemperatures[0] = myThermometers.beerTemperature;
-          Serial.println(myThermometers.beerTemperature);
-          Serial.println(myThermometers.airTemperature);
           airTemperatures[0] = myThermometers.airTemperature;
-          float beerTemp = mode(beerTemperatures, SAMPLES) / 10;
-          float airTemp = mode(airTemperatures, SAMPLES) / 10;
-          if (beerTemp != previousBeerTemp) {
-            previousBeerTemp = beerTemp;
-            updateBeerTemperature(beerTemp, brewPtr);
-            brewScreen(beerTemp);
-            Serial.print("Beer Thermometer: ");
-            Serial.println(beerTemp);
-            Serial.print("Air Thermometer: ");
-            Serial.println(airTemp);
+          int statBeerTemp = mode(beerTemperatures, SAMPLES);
+          int statAirTemp = mode(airTemperatures, SAMPLES);
+          Serial.print("Statistical Beer Temperature: ");
+          Serial.println(statBeerTemp);
+          Serial.print("Statistical Air Temperature: ");
+          Serial.println(statAirTemp);
+          if (statBeerTemp != previousBeerTemp) {
+            previousBeerTemp = statBeerTemp;
+            updateBeerTemperature(statBeerTemp, brewPtr);
+            Serial.print("Previous Beer Temperature: ");
+            Serial.println(previousBeerTemp);
+            for (int j = 0; j < SAMPLES; j++) {
+              Serial.println(beerTemperatures[j]);
+            }
+            brewScreen(statBeerTemp);
 
             doc["sensor"] = "fridge";
             doc["error"] = "NONE";
-            doc["beer"] = beerTemp;
-            doc["air"] = airTemp;
+            doc["beer"] = statBeerTemp;
+            doc["air"] = statAirTemp;
             if (heater_control) {
               doc["heater"] = "ON";
             }
@@ -373,13 +376,13 @@ void failSafe() {
   onCoolerControlChange();
 }
 
-void updateBeerTemperature(float Temperature, struct brew *brew) {
+void updateBeerTemperature(int Temperature, struct brew *brew) {
   if (Temperature < brew->mintemp) {  // Too cold
     cooler_control = off;  // Make sure cooler is off
     heater_control = on;
     displayScreen = 0;
   }
-  else if (Temperature >= brew->maxtemp - 1.5) {  // Too warm
+  else if (Temperature >= brew->maxtemp - 15) {  // Too warm
     heater_control = off;  // Make sure heater is off
     cooler_control = on;
     displayScreen = 2;
@@ -454,7 +457,7 @@ int updateReadings(unsigned int maxError) {
 // Read both thermometers.
 // The thermometers struct only updates if both readings were successful.
 // Returns zero on success or a positive error code
-int readThermometers(DallasTemperature _sensors, struct thermometers * _thermometers) {
+int readThermometers(DallasTemperature _sensors, struct thermometers *_thermometers) {
   // Issue global temperature request to all devices on the bus
   Serial.print("Requesting temperatures...");
   _sensors.requestTemperatures(); // Send the command to get temperatures
@@ -465,6 +468,8 @@ int readThermometers(DallasTemperature _sensors, struct thermometers * _thermome
   // Check if reading was successful
   if ((beerTempC != DEVICE_DISCONNECTED_C) && (beerTempC < 85.0)) {  // Device error
     _thermometers->beerTemperature = beerTempC * 10;  // Convert to int
+    Serial.print("Beer Temperature: ");
+    Serial.println( _thermometers->beerTemperature);
   }
   else return BEER_THERMOMETER_FAILUE;
 
@@ -472,6 +477,8 @@ int readThermometers(DallasTemperature _sensors, struct thermometers * _thermome
 
   if ((airTempC != DEVICE_DISCONNECTED_C) && (airTempC < 85.0)) {
     _thermometers->airTemperature = airTempC * 10;
+    Serial.print("Air Temperature: ");
+    Serial.println(_thermometers->airTemperature);
   }
   else return AIR_THERMOMETER_FAILURE;
 
