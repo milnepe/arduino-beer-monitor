@@ -4,12 +4,11 @@
 #include <WiFiNINA.h>
 #include "arduino_secrets.h"
 #include <PubSubClient.h>
-//#include <avr/dtostrf.h>
 #include <ArduinoJson.h>
 
-#define READING_INTERVAL 5000 // ms
+#define READING_INTERVAL 30000 // ms
 #define WIFI_INTERVAL 30000 // ms
-#define SAMPLES 5
+#define SAMPLES 6
 #define ALARM_THRESHOLD 5  // Number of consecutive error readings
 
 DeviceAddress beerThermometer = { 0x28, 0x61, 0x65, 0x24, 0x05, 0x00, 0x00, 0x62 };
@@ -74,10 +73,8 @@ struct thermometers {
 struct thermometers myThermometers;
 
 // Store temeratures for averages
-int oldBeerTemperatures[SAMPLES] = {0};
-int newBeerTemperatures[SAMPLES] = {0};
-int oldAirTemperatures[SAMPLES] = {0};
-int newAirTemperatures[SAMPLES] = {0};
+int beerTemperatures[SAMPLES];
+int airTemperatures[SAMPLES];
 
 unsigned int state = 0;  // Menu mode
 unsigned int buttonState = 0;  // Default state
@@ -93,9 +90,9 @@ char buffer[128];
 
 void setup() {
   Serial.begin(9600);
-  //  while (!Serial) {
-  //    ; // wait for serial port to connect
-  //  }
+    while (!Serial) {
+      ; // wait for serial port to connect
+    }
   Serial.println("Beer brewer test!");
   CARRIER_CASE = true;
 
@@ -103,10 +100,10 @@ void setup() {
   carrier.display.setRotation(0);
   carrier.leds.setBrightness(2);
   delay(5000);
-  
+
   sensors.begin();
   delay(5000);
-  
+
   mqttClient.setServer(SECRET_BROKER, 1883);
 
   WiFi.begin(SECRET_SSID, SECRET_PASSWD);
@@ -176,12 +173,12 @@ void loop() {
       }
 
       break;
-    case 1: // Init thermometers
+    case 1: // Init temperature arays
       for (int i = 0; i < SAMPLES; i++) {
         // Get latest temperature readings
         if (!updateReadings(ALARM_THRESHOLD)) {
-          oldBeerTemperatures[i] = myThermometers.beerTemperature;
-          oldAirTemperatures[i] = myThermometers.airTemperature;
+          beerTemperatures[i] = myThermometers.beerTemperature;
+          airTemperatures[i] = myThermometers.airTemperature;
         }
         else {
           state = 3;  // Error state
@@ -189,8 +186,8 @@ void loop() {
         delay(1000);
       } // End init
       for (int j = 0; j < SAMPLES; j++) {
-        Serial.println(oldBeerTemperatures[j]);
-        Serial.println(oldAirTemperatures[j]);
+        Serial.println(beerTemperatures[j]);
+        Serial.println(airTemperatures[j]);
       }
       state = 2;
       break;
@@ -200,8 +197,18 @@ void loop() {
 
         // Get latest temperature readings
         if (!updateReadings(ALARM_THRESHOLD)) {
-          float beerTemp = movingAverage(newBeerTemperatures, oldBeerTemperatures, myThermometers.beerTemperature) / 10;
-          float airTemp = movingAverage(newAirTemperatures, oldAirTemperatures, myThermometers.airTemperature) / 10;
+          // Right shift samples
+          int i = SAMPLES;
+          while (--i) {
+            beerTemperatures[i] = beerTemperatures[i - 1];
+            airTemperatures[i] = airTemperatures[i - 1];
+          }
+          beerTemperatures[0] = myThermometers.beerTemperature;
+          Serial.println(myThermometers.beerTemperature);
+          Serial.println(myThermometers.airTemperature);
+          airTemperatures[0] = myThermometers.airTemperature;
+          float beerTemp = mode(beerTemperatures, SAMPLES) / 10;
+          float airTemp = mode(airTemperatures, SAMPLES) / 10;
           if (beerTemp != previousBeerTemp) {
             previousBeerTemp = beerTemp;
             updateBeerTemperature(beerTemp, brewPtr);
@@ -250,6 +257,23 @@ void loop() {
       }
   }  // End switch
   delay(10); // Short delay
+}
+
+// Statistical mode
+int mode(int a[], int n) {
+  int maxValue = 0, maxCount = 0, i, j;
+  for (i = 0; i < n; ++i) {
+    int count = 0;
+    for (j = 0; j < n; ++j) {
+      if (a[j] == a[i])
+        ++count;
+    }
+    if (count > maxCount) {
+      maxCount = count;
+      maxValue = a[i];
+    }
+  }
+  return maxValue;
 }
 
 boolean reconnect() {
@@ -350,12 +374,12 @@ void failSafe() {
 }
 
 void updateBeerTemperature(float Temperature, struct brew *brew) {
-  if (Temperature < brew->mintemp) {
+  if (Temperature < brew->mintemp) {  // Too cold
     cooler_control = off;  // Make sure cooler is off
     heater_control = on;
     displayScreen = 0;
   }
-  else if (Temperature > brew->maxtemp) {
+  else if (Temperature >= brew->maxtemp - 1.5) {  // Too warm
     heater_control = off;  // Make sure heater is off
     cooler_control = on;
     displayScreen = 2;
@@ -403,29 +427,6 @@ void pulseLoop() {
   b = sin(b) * max_brightness;
   carrier.leds.setBrightness(b);
   carrier.leds.show();
-}
-
-// Calculate a moving average from an array of integers
-// Returns the average of the input as a float
-float movingAverage(int newTempArray[], int oldTempArray[], int newTemperature) {
-  // Get a new reading
-  newTempArray[0] = newTemperature;
-  Serial.println(newTempArray[0]);
-
-  // Add old temperatures shifted by 1
-  for (int i = 0; i < (SAMPLES - 1); i++) {
-    newTempArray[i + 1] = oldTempArray[i];
-  }
-  // Sve new temperatures for next itteration
-  for (int i = 0; i < SAMPLES; i++) {
-    oldTempArray[i] =  newTempArray[i];
-  }
-  // Calculate new average
-  int sum = 0;
-  for (int i = 0; i < SAMPLES; i++) {
-    sum += newTempArray[i];
-  }
-  return (sum / SAMPLES);
 }
 
 // Safety wrapper round thermometer readings
