@@ -78,7 +78,7 @@ thermometers myThermometers;
 int beerTemperatures[SAMPLES];
 int airTemperatures[SAMPLES];
 
-unsigned int state = 0;  // Menu mode
+unsigned int operating_mode = 0;  // Menu mode
 unsigned int buttonState = 0;  // Default state
 unsigned int previousButtonState = 1;
 unsigned long previousMillis = 0;
@@ -89,6 +89,8 @@ long lastReconnectAttempt = 0;
 
 StaticJsonDocument<128> doc;
 char buffer[128];
+
+enum modes {MENU_MODE, PROCESS_MODE, ERROR_MODE};
 
 void setup() {
   Serial.begin(9600);
@@ -135,8 +137,8 @@ void loop() {
     mqttClient.loop();
   }
 
-  switch (state) {
-    case 0: // Menu mode
+  switch (operating_mode) {
+    case MENU_MODE: // Menu mode
       if (buttonState != previousButtonState) {
         previousButtonState = buttonState;
         menuScreen(buttonState);
@@ -169,31 +171,32 @@ void loop() {
           Serial.println("Lock...");
           Serial.println(profilePtr->name);
           delay(1000);
-          state = 1;
+          operating_mode = PROCESS_MODE;
         }
         Serial.println("Touched Down Button 4");
       }
+      break;
 
-      break;
-    case 1: // Init temperature arays
-      for (int i = 0; i < SAMPLES; i++) {
-        // Get latest temperature readings
-        if (!updateReadings(ALARM_THRESHOLD)) {
-          beerTemperatures[i] = myThermometers.beerTemperature;
-          airTemperatures[i] = myThermometers.airTemperature;
-        }
-        else {
-          state = 3;  // Error state
-        }
-        delay(1000);
-      } // End init
-      for (int j = 0; j < SAMPLES; j++) {
-        Serial.println(beerTemperatures[j]);
-        Serial.println(airTemperatures[j]);
-      }
-      state = 2;
-      break;
-    case 2:  // Brewing mode
+//    case 1: // Init temperature arays
+//      for (int i = 0; i < SAMPLES; i++) {
+//        // Get latest temperature readings
+//        if (!updateReadings(ALARM_THRESHOLD)) {
+//          beerTemperatures[i] = myThermometers.beerTemperature;
+//          airTemperatures[i] = myThermometers.airTemperature;
+//        }
+//        else {
+//          operating_mode = 3;  // Error state
+//        }
+//        delay(1000);
+//      } // End init
+//      for (int j = 0; j < SAMPLES; j++) {
+//        Serial.println(beerTemperatures[j]);
+//        Serial.println(airTemperatures[j]);
+//      }
+//      operating_mode = 2;
+//      break;
+
+    case PROCESS_MODE:  // Brewing mode
       if (currentMillis - previousMillis >= READING_INTERVAL) {
         previousMillis = currentMillis;
 
@@ -207,8 +210,8 @@ void loop() {
           }
           beerTemperatures[0] = myThermometers.beerTemperature;
           airTemperatures[0] = myThermometers.airTemperature;
-          int statBeerTemp = mode(beerTemperatures, SAMPLES);
-          int statAirTemp = mode(airTemperatures, SAMPLES);
+          int statBeerTemp = statMode(beerTemperatures, SAMPLES);
+          int statAirTemp = statMode(airTemperatures, SAMPLES);
           Serial.print("Statistical Beer Temperature: ");
           Serial.println(statBeerTemp);
           Serial.print("Statistical Air Temperature: ");
@@ -246,12 +249,13 @@ void loop() {
           }
         }
         else {
-          state = 3;  // Error state
+          operating_mode = ERROR_MODE;  // Error state
         }
       }  // End millis
       pulseLoop();
       break;
-    case 3:  // Error state (heater & cooler off)
+
+    case ERROR_MODE:  // Error state (heater & cooler off)
       failSafe();
       errorScreen();
       Serial.println("Sound the alarm!");
@@ -265,7 +269,7 @@ void loop() {
 }
 
 // Statistical mode
-int mode(int a[], int n) {
+int statMode(int a[], int n) {
   int maxValue = 0, maxCount = 0, i, j;
   for (i = 0; i < n; ++i) {
     int count = 0;
