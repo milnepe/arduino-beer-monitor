@@ -141,25 +141,25 @@ void loop() {
       }
 
       carrier.Buttons.update(); // Check touch pads
-      if (carrier.Button0.getTouch()) {
+      if (carrier.Buttons.getTouch(TOUCH0)) {
         touchCounter = 0;
         buttonState = 0;
         brewPtr = &ferment;
         Serial.println("Touched Down Button 0");
       }
-      if (carrier.Button1.getTouch()) {
+      if (carrier.Buttons.getTouch(TOUCH1)) {
         touchCounter = 0;
         buttonState = 1;
         brewPtr = &finish;
         Serial.println("Touched Down Button 1");
       }
-      if (carrier.Button2.getTouch()) {
+      if (carrier.Buttons.getTouch(TOUCH2)) {
         touchCounter = 0;
         buttonState = 2;
         brewPtr = &test;
         Serial.println("Touched Down Button 2");
       }
-      if (carrier.Button4.getTouch()) {
+      if (carrier.Buttons.getTouch(TOUCH4)) {
         buttonState = 4;
         touchCounter++;
         if (touchCounter > 200) {
