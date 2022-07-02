@@ -78,9 +78,15 @@ thermometers myThermometers;
 int beerTemperatures[SAMPLES];
 int airTemperatures[SAMPLES];
 
+// Name device mode of operation
+enum modes {MENU_MODE, PROCESS_MODE, ERROR_MODE};
+
+// Name different brewing processes
+enum buttonStates {FERMENT, FINISH, TEST, LOCK};
+
 unsigned int operating_mode = 0;  // Menu mode
-unsigned int buttonState = 0;  // Default state
-unsigned int previousButtonState = 1;
+unsigned int buttonState = FERMENT;  // Default state
+unsigned int previousButtonState = FINISH;
 unsigned long previousMillis = 0;
 unsigned long prevConnectMillis = 0;
 float previousBeerTemp = -127.0;
@@ -89,8 +95,6 @@ long lastReconnectAttempt = 0;
 
 StaticJsonDocument<128> doc;
 char buffer[128];
-
-enum modes {MENU_MODE, PROCESS_MODE, ERROR_MODE};
 
 void setup() {
   Serial.begin(9600);
@@ -147,24 +151,24 @@ void loop() {
       carrier.Buttons.update(); // Check touch pads
       if (carrier.Buttons.getTouch(TOUCH0)) {
         touchCounter = 0;
-        buttonState = 0;
+        buttonState = FERMENT;
         profilePtr = &ferment;
         Serial.println("Touched Down Button 0");
       }
       if (carrier.Buttons.getTouch(TOUCH1)) {
         touchCounter = 0;
-        buttonState = 1;
+        buttonState = FINISH;
         profilePtr = &finish;
         Serial.println("Touched Down Button 1");
       }
       if (carrier.Buttons.getTouch(TOUCH2)) {
         touchCounter = 0;
-        buttonState = 2;
+        buttonState = TEST;
         profilePtr = &test;
         Serial.println("Touched Down Button 2");
       }
       if (carrier.Buttons.getTouch(TOUCH4)) {
-        buttonState = 4;
+        buttonState = LOCK;
         touchCounter++;
         if (touchCounter > 200) {
           startScreen();
@@ -177,24 +181,24 @@ void loop() {
       }
       break;
 
-//    case 1: // Init temperature arays
-//      for (int i = 0; i < SAMPLES; i++) {
-//        // Get latest temperature readings
-//        if (!updateReadings(ALARM_THRESHOLD)) {
-//          beerTemperatures[i] = myThermometers.beerTemperature;
-//          airTemperatures[i] = myThermometers.airTemperature;
-//        }
-//        else {
-//          operating_mode = 3;  // Error state
-//        }
-//        delay(1000);
-//      } // End init
-//      for (int j = 0; j < SAMPLES; j++) {
-//        Serial.println(beerTemperatures[j]);
-//        Serial.println(airTemperatures[j]);
-//      }
-//      operating_mode = 2;
-//      break;
+    //    case 1: // Init temperature arays
+    //      for (int i = 0; i < SAMPLES; i++) {
+    //        // Get latest temperature readings
+    //        if (!updateReadings(ALARM_THRESHOLD)) {
+    //          beerTemperatures[i] = myThermometers.beerTemperature;
+    //          airTemperatures[i] = myThermometers.airTemperature;
+    //        }
+    //        else {
+    //          operating_mode = 3;  // Error state
+    //        }
+    //        delay(1000);
+    //      } // End init
+    //      for (int j = 0; j < SAMPLES; j++) {
+    //        Serial.println(beerTemperatures[j]);
+    //        Serial.println(airTemperatures[j]);
+    //      }
+    //      operating_mode = 2;
+    //      break;
 
     case PROCESS_MODE:  // Brewing mode
       if (currentMillis - previousMillis >= READING_INTERVAL) {
@@ -266,7 +270,7 @@ void loop() {
       }
   }  // End switch
   delay(10); // Short delay
-}
+}  // End loop
 
 // Statistical mode
 int statMode(int a[], int n) {
