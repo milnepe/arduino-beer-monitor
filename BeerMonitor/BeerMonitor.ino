@@ -22,16 +22,16 @@ char pass[] = SECRET_PASSWD;
 const char broker[] = SECRET_BROKER;
 int port = 1883;
 
-struct brew {
+struct process_profile {
   const char *name;
   int mintemp;
   int maxtemp;
 };
 
-struct brew ferment = {"Ferment", 180, 210};
-struct brew finish = {"Finish", 100, 150};
-struct brew test = {"Test", 220, 240};
-struct brew *brewPtr = &ferment;  // Pointer to a brew
+process_profile ferment = {"Ferment", 180, 210};
+process_profile finish = {"Finish", 100, 150};
+process_profile test = {"Test", 220, 240};
+process_profile *profilePtr = &ferment;  // Pointer to a brew
 
 MKRIoTCarrier carrier;
 unsigned int threshold = 4;
@@ -72,7 +72,7 @@ struct thermometers {
   int airTemperature = -127;
 };
 
-struct thermometers myThermometers;
+thermometers myThermometers;
 
 // Store temperatures for statistics
 int beerTemperatures[SAMPLES];
@@ -146,19 +146,19 @@ void loop() {
       if (carrier.Buttons.getTouch(TOUCH0)) {
         touchCounter = 0;
         buttonState = 0;
-        brewPtr = &ferment;
+        profilePtr = &ferment;
         Serial.println("Touched Down Button 0");
       }
       if (carrier.Buttons.getTouch(TOUCH1)) {
         touchCounter = 0;
         buttonState = 1;
-        brewPtr = &finish;
+        profilePtr = &finish;
         Serial.println("Touched Down Button 1");
       }
       if (carrier.Buttons.getTouch(TOUCH2)) {
         touchCounter = 0;
         buttonState = 2;
-        brewPtr = &test;
+        profilePtr = &test;
         Serial.println("Touched Down Button 2");
       }
       if (carrier.Buttons.getTouch(TOUCH4)) {
@@ -167,7 +167,7 @@ void loop() {
         if (touchCounter > 200) {
           startScreen();
           Serial.println("Lock...");
-          Serial.println(brewPtr->name);
+          Serial.println(profilePtr->name);
           delay(1000);
           state = 1;
         }
@@ -215,7 +215,7 @@ void loop() {
           Serial.println(statAirTemp);
           if (statBeerTemp != previousBeerTemp) {
             previousBeerTemp = statBeerTemp;
-            updateBeerTemperature(statBeerTemp, brewPtr);
+            updateBeerTemperature(statBeerTemp, profilePtr);
             Serial.print("Previous Beer Temperature: ");
             Serial.println(previousBeerTemp);
             for (int j = 0; j < SAMPLES; j++) {
@@ -353,7 +353,7 @@ void brewScreen(float Temperature) {
   carrier.display.setTextColor(ST77XX_WHITE); //white text
   carrier.display.setTextSize(3); //medium sized text
   carrier.display.setCursor(60, 40);
-  carrier.display.print(brewPtr->name);  // Whats brewing!
+  carrier.display.print(profilePtr->name);  // Whats brewing!
 
   carrier.display.setTextColor(ST77XX_WHITE); //white text
   carrier.display.setTextSize(6); //medium sized text
@@ -378,13 +378,13 @@ void failSafe() {
   onCoolerControlChange();
 }
 
-void updateBeerTemperature(int Temperature, struct brew *brew) {
-  if (Temperature < brew->mintemp) {  // Too cold
+void updateBeerTemperature(int Temperature, process_profile *profile) {
+  if (Temperature < profile->mintemp) {  // Too cold
     cooler_control = off;  // Make sure cooler is off
     heater_control = on;
     displayScreen = 0;
   }
-  else if (Temperature >= brew->maxtemp - 15) {  // Too warm
+  else if (Temperature >= profile->maxtemp - 15) {  // Too warm
     heater_control = off;  // Make sure heater is off
     cooler_control = on;
     displayScreen = 2;
@@ -459,7 +459,7 @@ int updateReadings(unsigned int maxError) {
 // Read both thermometers.
 // The thermometers struct only updates if both readings were successful.
 // Returns zero on success or a positive error code
-int readThermometers(DallasTemperature _sensors, struct thermometers *_thermometers) {
+int readThermometers(DallasTemperature _sensors, thermometers *_thermometers) {
   // Issue global temperature request to all devices on the bus
   Serial.print("Requesting temperatures...");
   _sensors.requestTemperatures(); // Send the command to get temperatures
