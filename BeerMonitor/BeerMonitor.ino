@@ -11,8 +11,10 @@
 #define SAMPLES 6
 #define ALARM_THRESHOLD 5  // Number of consecutive error readings
 
-DeviceAddress beerThermometer = { 0x28, 0x61, 0x65, 0x24, 0x05, 0x00, 0x00, 0x62 };
-DeviceAddress airThermometer = { 0x28, 0x11, 0x0B, 0x64, 0x03, 0x00, 0x00, 0x78 };
+//DeviceAddress beerThermometer = { 0x28, 0x61, 0x65, 0x24, 0x05, 0x00, 0x00, 0x62 };
+//DeviceAddress airThermometer = { 0x28, 0x11, 0x0B, 0x64, 0x03, 0x00, 0x00, 0x78 };
+DeviceAddress beerThermometer = { 0x28, 0x58, 0x96, 0x64, 0x03, 0x00, 0x00, 0xC0 };
+DeviceAddress airThermometer = { 0x28, 0xE2, 0x8B, 0x64, 0x03, 0x00, 0x00, 0x98 };
 
 char ssid[] = SECRET_SSID;
 char pass[] = SECRET_PASSWD;
@@ -356,7 +358,7 @@ void brewScreen(float Temperature) {
   carrier.display.setTextColor(ST77XX_WHITE); //white text
   carrier.display.setTextSize(6); //medium sized text
   carrier.display.setCursor(40, 80);
-  carrier.display.print(String(Temperature, 1));
+  carrier.display.print(String(Temperature / 10, 1));
   carrier.display.print("C");
 
   //carrier.display.setTextColor(ST77XX_YELLOW); //yellow text
