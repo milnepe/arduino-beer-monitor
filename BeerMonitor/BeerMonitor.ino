@@ -188,7 +188,8 @@ void loop() {
     // Initialise temperature sample buffer with samples before changing to process mode
     case SENSOR_INIT_MODE:
       for (int i = 0; i < SAMPLES; i++) {
-        if (!getTemperatureSample(sensors, &aSample)) {
+        if (!getTemperatures(ALARM_THRESHOLD)) {
+          //        if (!getTemperatureSample(sensors, &aSample)) {
           sample_buffer[i] = aSample;
         }
         else {
@@ -205,8 +206,8 @@ void loop() {
       if (currentMillis - previousMillis >= READING_INTERVAL) {
         previousMillis = currentMillis;
         // Get latest temperature readings
-        //        if (!updateReadings(ALARM_THRESHOLD)) {
-        if (!getTemperatureSample(sensors, &aSample)) {
+        if (!getTemperatures(ALARM_THRESHOLD)) {
+          //        if (!getTemperatureSample(sensors, &aSample)) {
           Serial.print("Beer Temperature: ");
           Serial.println(aSample.beerTemperature);
           Serial.print("Air Temperature: ");
@@ -470,7 +471,7 @@ void pulseLoop() {
 
 // Safety wrapper round thermometer readings
 // Returns 1 if there are multiple reading failures
-int updateReadings(unsigned int maxError) {
+int getTemperatures(unsigned int maxError) {
   static unsigned int errorCounter = 0;
   while (int err = getTemperatureSample(sensors, &aSample)) {
     if (err == 1) {
