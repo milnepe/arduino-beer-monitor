@@ -67,16 +67,15 @@ uint32_t noColor = carrier.leds.Color( 0, 0, 0);
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
-struct thermometers {
+struct temperature_sample {
   int beerTemperature = -127;
   int airTemperature = -127;
 };
 
-thermometers myThermometers;
+temperature_sample aSample;
 
-// Store temperatures for statistics
-int beerTemperatures[SAMPLES];
-int airTemperatures[SAMPLES];
+// Store temperature samples in buffer for statistics
+temperature_sample sample_buffer[SAMPLES];
 
 // Name device mode of operation
 enum modes {MENU_MODE, SENSOR_INIT_MODE, PROCESS_MODE, ERROR_MODE};
@@ -182,84 +181,79 @@ void loop() {
       }
       break;
 
-    // Initialise temperature arrays before changing to process mode
+    // Initialise temperature sample buffer with samples before changing to process mode
     case SENSOR_INIT_MODE:
       for (int i = 0; i < SAMPLES; i++) {
-        // Get latest temperature readings
-        if (!updateReadings(ALARM_THRESHOLD)) {
-          beerTemperatures[i] = myThermometers.beerTemperature;
-          airTemperatures[i] = myThermometers.airTemperature;
+        if (!getTemperatureSample(sensors, &aSample)) {
+          sample_buffer[i] = aSample;
         }
         else {
           operating_mode = ERROR_MODE;
         }
         delay(1000);  // Delay between samples
-      } // End init
-      for (int j = 0; j < SAMPLES; j++) {
-        Serial.println(beerTemperatures[j]);
-        Serial.println(airTemperatures[j]);
       }
+      printSampleBuffer();
       operating_mode = PROCESS_MODE;
       break;
 
     // Run the selected brewing process for ever
     case PROCESS_MODE:
-      if (currentMillis - previousMillis >= READING_INTERVAL) {
-        previousMillis = currentMillis;
-
-        // Get latest temperature readings
-        if (!updateReadings(ALARM_THRESHOLD)) {
-          // Right shift samples
-          int i = SAMPLES;
-          while (--i) {
-            beerTemperatures[i] = beerTemperatures[i - 1];
-            airTemperatures[i] = airTemperatures[i - 1];
-          }
-          beerTemperatures[0] = myThermometers.beerTemperature;
-          airTemperatures[0] = myThermometers.airTemperature;
-          int statBeerTemp = statMode(beerTemperatures, SAMPLES);
-          int statAirTemp = statMode(airTemperatures, SAMPLES);
-          Serial.print("Statistical Beer Temperature: ");
-          Serial.println(statBeerTemp);
-          Serial.print("Statistical Air Temperature: ");
-          Serial.println(statAirTemp);
-          if (statBeerTemp != previousBeerTemp) {
-            previousBeerTemp = statBeerTemp;
-            updateBeerTemperature(statBeerTemp, profilePtr);
-            Serial.print("Previous Beer Temperature: ");
-            Serial.println(previousBeerTemp);
-            for (int j = 0; j < SAMPLES; j++) {
-              Serial.println(beerTemperatures[j]);
-            }
-            brewScreen(statBeerTemp);
-
-            doc["sensor"] = "fridge";
-            doc["error"] = "NONE";
-            doc["beer"] = statBeerTemp;
-            doc["air"] = statAirTemp;
-            if (heater_control) {
-              doc["heater"] = "ON";
-            }
-            else {
-              doc["heater"] = "OFF";
-            }
-            if (cooler_control) {
-              doc["cooler"] = "ON";
-            }
-            else {
-              doc["cooler"] = "OFF";
-            }
-            size_t n = serializeJson(doc, buffer);
-            mqttClient.publish("/beer/data", buffer, n);
-            Serial.println();
-            serializeJsonPretty(doc, Serial);
-          }
-        }
-        else {
-          operating_mode = ERROR_MODE;  // Error state
-        }
-      }  // End millis
-      pulseLoop();
+      //      if (currentMillis - previousMillis >= READING_INTERVAL) {
+      //        previousMillis = currentMillis;
+      //
+      //        // Get latest temperature readings
+      //        if (!updateReadings(ALARM_THRESHOLD)) {
+      //          // Right shift samples
+      //          int i = SAMPLES;
+      //          while (--i) {
+      //            beerTemperatures[i] = beerTemperatures[i - 1];
+      //            airTemperatures[i] = airTemperatures[i - 1];
+      //          }
+      //          beerTemperatures[0] = aSample.beerTemperature;
+      //          airTemperatures[0] = aSample.airTemperature;
+      //          int statBeerTemp = statMode(beerTemperatures, SAMPLES);
+      //          int statAirTemp = statMode(airTemperatures, SAMPLES);
+      //          Serial.print("Statistical Beer Temperature: ");
+      //          Serial.println(statBeerTemp);
+      //          Serial.print("Statistical Air Temperature: ");
+      //          Serial.println(statAirTemp);
+      //          if (statBeerTemp != previousBeerTemp) {
+      //            previousBeerTemp = statBeerTemp;
+      //            updateBeerTemperature(statBeerTemp, profilePtr);
+      //            Serial.print("Previous Beer Temperature: ");
+      //            Serial.println(previousBeerTemp);
+      //            for (int j = 0; j < SAMPLES; j++) {
+      //              Serial.println(beerTemperatures[j]);
+      //            }
+      //            brewScreen(statBeerTemp);
+      //
+      //            doc["sensor"] = "fridge";
+      //            doc["error"] = "NONE";
+      //            doc["beer"] = statBeerTemp;
+      //            doc["air"] = statAirTemp;
+      //            if (heater_control) {
+      //              doc["heater"] = "ON";
+      //            }
+      //            else {
+      //              doc["heater"] = "OFF";
+      //            }
+      //            if (cooler_control) {
+      //              doc["cooler"] = "ON";
+      //            }
+      //            else {
+      //              doc["cooler"] = "OFF";
+      //            }
+      //            size_t n = serializeJson(doc, buffer);
+      //            mqttClient.publish("/beer/data", buffer, n);
+      //            Serial.println();
+      //            serializeJsonPretty(doc, Serial);
+      //          }
+      //        }
+      //        else {
+      //          operating_mode = ERROR_MODE;  // Error state
+      //        }
+      //      }  // End millis
+      //      pulseLoop();
       break;
 
     // Error mode (heater & cooler off)
@@ -450,7 +444,7 @@ void pulseLoop() {
 // Returns 1 if there are multiple reading failures
 int updateReadings(unsigned int maxError) {
   static unsigned int errorCounter = 0;
-  while (int err = readThermometers(sensors, &myThermometers)) {
+  while (int err = getTemperatureSample(sensors, &aSample)) {
     if (err == 1) {
       Serial.println("Error: Could not read Beer Thermometer");
     }
@@ -471,7 +465,7 @@ int updateReadings(unsigned int maxError) {
 // Read both thermometers.
 // The thermometers struct only updates if both readings were successful.
 // Returns zero on success or a positive error code
-int readThermometers(DallasTemperature _sensors, thermometers *_thermometers) {
+int getTemperatureSample(DallasTemperature _sensors, temperature_sample *sample) {
   // Issue global temperature request to all devices on the bus
   Serial.print("Requesting temperatures...");
   _sensors.requestTemperatures(); // Send the command to get temperatures
@@ -481,20 +475,39 @@ int readThermometers(DallasTemperature _sensors, thermometers *_thermometers) {
 
   // Check if reading was successful
   if ((beerTempC != DEVICE_DISCONNECTED_C) && (beerTempC < 85.0)) {  // Device error
-    _thermometers->beerTemperature = beerTempC * 10;  // Convert to int
+    sample->beerTemperature = beerTempC * 10;  // Convert to int
     Serial.print("Beer Temperature: ");
-    Serial.println( _thermometers->beerTemperature);
+    Serial.println( sample->beerTemperature);
   }
   else return BEER_THERMOMETER_FAILUE;
 
   float airTempC = _sensors.getTempC(airThermometer);
 
   if ((airTempC != DEVICE_DISCONNECTED_C) && (airTempC < 85.0)) {
-    _thermometers->airTemperature = airTempC * 10;
+    sample->airTemperature = airTempC * 10;
     Serial.print("Air Temperature: ");
-    Serial.println(_thermometers->airTemperature);
+    Serial.println(sample->airTemperature);
   }
   else return AIR_THERMOMETER_FAILURE;
 
   return SUCCESS;
+}
+
+void printSampleBuffer() {
+  Serial.print("Beer temperature: [");
+  for (int j = 0; j < SAMPLES; j++) {
+    Serial.print(sample_buffer[j].beerTemperature);
+    if (j < SAMPLES - 1) {
+      Serial.print(",");
+    }
+  }
+  Serial.println("]");
+  Serial.print("Air temperature: [");
+  for (int j = 0; j < SAMPLES; j++) {
+    Serial.print(sample_buffer[j].airTemperature);
+    if (j < SAMPLES - 1) {
+      Serial.print(",");
+    }
+  }
+  Serial.println("]");
 }
