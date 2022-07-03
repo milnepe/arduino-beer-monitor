@@ -53,8 +53,8 @@ String heater_state_desc = "Heater: OFF";
 String cooler_state_desc = "Cooler: OFF";
 int displayScreen = 0;
 
-uint32_t greenColor = carrier.leds.Color( 255, 0, 0);
-uint32_t redColor = carrier.leds.Color( 0, 255, 0);
+uint32_t redColor = carrier.leds.Color( 255, 0, 0);
+uint32_t greenColor = carrier.leds.Color( 0, 255, 0);
 uint32_t blueColor = carrier.leds.Color( 0, 0, 255);
 uint32_t noColor = carrier.leds.Color( 0, 0, 0);
 
