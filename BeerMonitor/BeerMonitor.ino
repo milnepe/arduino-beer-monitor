@@ -84,6 +84,9 @@ enum modes {MENU_MODE, SENSOR_INIT_MODE, PROCESS_MODE, ERROR_MODE};
 // Name different brewing processes
 enum buttonStates {FERMENT, FINISH, TEST, LOCK};
 
+// Name relay states
+enum relayStates {NORMAL, HEATING, COOLING};
+
 unsigned int operating_mode = 0;  // Menu mode
 unsigned int buttonState = FERMENT;  // Default state
 unsigned int previousButtonState = FINISH;
@@ -215,15 +218,15 @@ void loop() {
           // Calculate statistical temperatures (smoothing)
           int statBeerTemp = statBeerTemperature(sample_buffer, SAMPLES);
           int statAirTemp = statAirTemperature(sample_buffer, SAMPLES);
-
-          int screenMode = updateRelays(statBeerTemp, profilePtr);
-
-          brewScreen(statBeerTemp, screenMode);
-
           Serial.print("Statistical Beer Temperature: ");
           Serial.println(statBeerTemp);
           Serial.print("Statistical Air Temperature: ");
           Serial.println(statAirTemp);
+
+          int relayState = updateRelays(statBeerTemp, profilePtr);
+          printRelayStates();
+
+          brewScreen(statBeerTemp, relayState);
         }
         else {
           operating_mode = ERROR_MODE;
@@ -281,25 +284,25 @@ void failSafe() {
 }
 
 int updateRelays(int temperature, process_profile *profile) {
+  int state = NORMAL;
   if (temperature < profile->mintemp) {  // Too cold
     cooler_control = off;  // Make sure cooler is off
     heater_control = on;
-    displayScreen = 0;
+    state = HEATING;
   }
   else if (temperature >= profile->maxtemp - 15) {  // Too warm
     heater_control = off;  // Make sure heater is off
     cooler_control = on;
-    displayScreen = 2;
+    state = COOLING;
   }
   else {
     heater_control = off;
     cooler_control = off;
-    displayScreen = 1;
+    state = NORMAL;
   }
   onHeaterControlChange();
   onCoolerControlChange();
-  Serial.println(displayScreen);
-  return displayScreen;
+  return state;
 }
 
 void onHeaterControlChange() {
@@ -415,19 +418,18 @@ void errorScreen() {
   carrier.display.print("ERROR");
 }
 
-void brewScreen(int temperature, int displayScreen) {
-  if (displayScreen == 0) {
+void brewScreen(int temperature, int relayState) {
+  if (relayState == HEATING) {
     carrier.display.fillScreen(ST77XX_BLUE); //blue background
     carrier.leds.fill(blueColor, 0, 5);
   }
 
-  else if (displayScreen == 1) {
+  else if (relayState == NORMAL) {
     carrier.display.fillScreen(ST77XX_GREEN); //green background
     carrier.leds.fill(greenColor, 0, 5);
   }
 
-  else if (displayScreen == 2) {
-    Serial.println(displayScreen);
+  else if (relayState == COOLING) {
     carrier.display.fillScreen(ST77XX_RED); //red background
     carrier.leds.fill(redColor, 0, 5);
   }
@@ -514,6 +516,14 @@ int getTemperatureSample(DallasTemperature _sensors, temperature_sample * sample
   else return AIR_THERMOMETER_FAILURE;
 
   return SUCCESS;
+}
+
+void printRelayStates() {
+  Serial.print("Heater relay: ");
+  Serial.print(heater_control);
+  Serial.print(", ");
+  Serial.print("Cooler relay: ");
+  Serial.println(cooler_control);
 }
 
 void printSampleBuffer() {
