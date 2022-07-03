@@ -20,7 +20,7 @@ DeviceAddress airThermometer = { 0x28, 0xE2, 0x8B, 0x64, 0x03, 0x00, 0x00, 0x98 
 char ssid[] = SECRET_SSID;
 char pass[] = SECRET_PASSWD;
 // Enter your mosquitto test server hostname or IP address:
-const char broker[] = SECRET_BROKER;
+const char broker[] = "airquality";
 int port = 1883;
 
 struct process_profile {
@@ -43,8 +43,10 @@ unsigned int threshold_btn_3 = 5;
 unsigned int threshold_btn_4 = 5;
 
 WiFiClient wifiClient;
+
 PubSubClient mqttClient(wifiClient);
 
+unsigned long lastReconnectMQTTAttempt = 0;
 const bool on = true;
 const bool off = false;
 bool heater_control = off;
@@ -104,7 +106,7 @@ void setup() {
   while (!Serial) {
     ; // wait for serial port to connect
   }
-  Serial.println("Beer brewer test!");
+  Serial.println("Beer Monitor");
   CARRIER_CASE = true;
 
   carrier.begin();
@@ -115,32 +117,37 @@ void setup() {
   sensors.begin();
   delay(5000);
 
-  mqttClient.setServer(SECRET_BROKER, 1883);
+  // Print firmware version on the module
+  String fv = WiFi.firmwareVersion();
+  String latestFv;
+  Serial.print("Firmware version installed: ");
+  Serial.println(fv);
 
-  WiFi.begin(SECRET_SSID, SECRET_PASSWD);
-  delay(1500);
-  Serial.println(WiFi.firmwareVersion());
-  IPAddress ip = WiFi.localIP();
-  Serial.println(ip);
-  lastReconnectAttempt = 0;
+  mqttClient.setServer(broker, port);
+
+  Serial.println("Attempting WiFi connection...");
+  delay(1000);
 }  // End setup
 
 void loop() {
   static unsigned int touchCounter = 0;
   unsigned long currentMillis = millis();
 
-  // Update MQTT without blocking
+  // Attempt to reconnect
+  // Wifi.begin blocks until connect or failure timeout
+  if (WiFi.status() != WL_CONNECTED) {
+    reconnectWiFi();
+  }
+
   if (!mqttClient.connected()) {
-    if (currentMillis - lastReconnectAttempt > 5000) {
-      lastReconnectAttempt = currentMillis;
-      // Attempt to reconnect - times out after 30 sec
-      if (reconnect()) {
-        lastReconnectAttempt = 0;
+    unsigned long now = millis();
+    if (now - lastReconnectMQTTAttempt > 5000) {
+      lastReconnectMQTTAttempt = now;
+      if (reconnectMQTT()) {
+        lastReconnectMQTTAttempt = 0;
       }
     }
-  }
-  else {
-    // Client connected
+  } else if (mqttClient.connected()) {
     mqttClient.loop();
   }
 
@@ -174,7 +181,7 @@ void loop() {
       if (carrier.Buttons.getTouch(TOUCH4)) {
         buttonState = LOCK;
         touchCounter++;
-        if (touchCounter > 200) {
+        if (touchCounter > 10) {
           startScreen();
           Serial.println("Lock...");
           Serial.println(profilePtr->name);
@@ -232,37 +239,33 @@ void loop() {
           printRelayStates();
 
           brewScreen(statBeerTemp, relayState);
+
+          // Update MQTT
+          doc["sensor"] = "fridge";
+          doc["error"] = "NONE";
+          doc["beer"] = statBeerTemp;
+          doc["air"] = statAirTemp;
+          if (heater_control) {
+            doc["heater"] = "ON";
+          }
+          else {
+            doc["heater"] = "OFF";
+          }
+          if (cooler_control) {
+            doc["cooler"] = "ON";
+          }
+          else {
+            doc["cooler"] = "OFF";
+          }
+          size_t n = serializeJson(doc, buffer);
+          mqttClient.publish("/beer/data", buffer, n);
+          Serial.println();
+          serializeJsonPretty(doc, Serial);
+          Serial.println();          
         }
         else {
           operating_mode = ERROR_MODE;
         }
-
-        //          if (statBeerTemp != previousBeerTemp) {
-        //            previousBeerTemp = statBeerTemp;
-        //
-        //            doc["sensor"] = "fridge";
-        //            doc["error"] = "NONE";
-        //            doc["beer"] = statBeerTemp;
-        //            doc["air"] = statAirTemp;
-        //            if (heater_control) {
-        //              doc["heater"] = "ON";
-        //            }
-        //            else {
-        //              doc["heater"] = "OFF";
-        //            }
-        //            if (cooler_control) {
-        //              doc["cooler"] = "ON";
-        //            }
-        //            else {
-        //              doc["cooler"] = "OFF";
-        //            }
-        //            size_t n = serializeJson(doc, buffer);
-        //            mqttClient.publish("/beer/data", buffer, n);
-        //            Serial.println();
-        //            serializeJsonPretty(doc, Serial);
-        //          }
-        //        }
-
       }  // End millis
       pulseLoop();
       break;
@@ -280,6 +283,63 @@ void loop() {
   }  // End switch
   delay(10); // Short delay
 }  // End loop
+
+int reconnectWiFi() {
+  // WL_IDLE_STATUS     = 0
+  // WL_NO_SSID_AVAIL   = 1
+  // WL_SCAN_COMPLETED  = 2
+  // WL_CONNECTED       = 3
+  // WL_CONNECT_FAILED  = 4
+  // WL_CONNECTION_LOST = 5
+  // WL_DISCONNECTED    = 6
+  printWiFiStatus(WiFi.status());
+  // Always force Wifi drv to disconnect for safety
+  int disconnect_result = WiFi.disconnect();
+  Serial.print("Disconnect state: ");
+  Serial.println(disconnect_result);
+  printWiFiStatus(WiFi.status());
+  delay(1000);
+  WiFi.begin(ssid, pass);
+  printWiFiStatus(WiFi.status());
+  return WiFi.status();
+}
+
+void printWiFiStatus(int state) {
+  switch (state) {
+    case WL_IDLE_STATUS:
+      Serial.println("WiFi IDLE");
+      break;
+    case WL_NO_SSID_AVAIL:
+      Serial.println("WiFi NO SSID AVAILABLE");
+      break;
+    case WL_SCAN_COMPLETED:
+      Serial.println("WiFi SCAN COMPLETED");
+      break;
+    case WL_CONNECTED:
+      Serial.println("WiFi CONNECTED");
+      break;
+    case WL_CONNECT_FAILED:
+      Serial.println("WiFi CONNECTION FAILED");
+      break;
+    case WL_CONNECTION_LOST:
+      Serial.println("WiFi CONNECTION LOST");
+      break;
+    case WL_DISCONNECTED:
+      Serial.println("WiFi DISCONNECTED");
+  }
+}
+
+boolean reconnectMQTT() {
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Attempting connection to the MQTT server: ");
+    Serial.println(broker);
+    if (mqttClient.connect("BeerMonitor")) {
+      mqttClient.publish("/beer/connect", "New Connection");
+      Serial.println("MQTT connected");
+    }
+  }
+  return mqttClient.connected();
+}
 
 void failSafe() {
   heater_control = off;
