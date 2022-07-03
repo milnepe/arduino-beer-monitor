@@ -6,7 +6,8 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#define READING_INTERVAL 30000 // ms
+//#define READING_INTERVAL 30000 // ms
+#define READING_INTERVAL 5000 // ms
 #define WIFI_INTERVAL 30000 // ms
 #define SAMPLES 6
 #define ALARM_THRESHOLD 5  // Number of consecutive error readings
@@ -198,62 +199,64 @@ void loop() {
 
     // Run the selected brewing process for ever
     case PROCESS_MODE:
-      //      if (currentMillis - previousMillis >= READING_INTERVAL) {
-      //        previousMillis = currentMillis;
-      //
-      //        // Get latest temperature readings
-      //        if (!updateReadings(ALARM_THRESHOLD)) {
-      //          // Right shift samples
-      //          int i = SAMPLES;
-      //          while (--i) {
-      //            beerTemperatures[i] = beerTemperatures[i - 1];
-      //            airTemperatures[i] = airTemperatures[i - 1];
-      //          }
-      //          beerTemperatures[0] = aSample.beerTemperature;
-      //          airTemperatures[0] = aSample.airTemperature;
-      //          int statBeerTemp = statMode(beerTemperatures, SAMPLES);
-      //          int statAirTemp = statMode(airTemperatures, SAMPLES);
-      //          Serial.print("Statistical Beer Temperature: ");
-      //          Serial.println(statBeerTemp);
-      //          Serial.print("Statistical Air Temperature: ");
-      //          Serial.println(statAirTemp);
-      //          if (statBeerTemp != previousBeerTemp) {
-      //            previousBeerTemp = statBeerTemp;
-      //            updateBeerTemperature(statBeerTemp, profilePtr);
-      //            Serial.print("Previous Beer Temperature: ");
-      //            Serial.println(previousBeerTemp);
-      //            for (int j = 0; j < SAMPLES; j++) {
-      //              Serial.println(beerTemperatures[j]);
-      //            }
-      //            brewScreen(statBeerTemp);
-      //
-      //            doc["sensor"] = "fridge";
-      //            doc["error"] = "NONE";
-      //            doc["beer"] = statBeerTemp;
-      //            doc["air"] = statAirTemp;
-      //            if (heater_control) {
-      //              doc["heater"] = "ON";
-      //            }
-      //            else {
-      //              doc["heater"] = "OFF";
-      //            }
-      //            if (cooler_control) {
-      //              doc["cooler"] = "ON";
-      //            }
-      //            else {
-      //              doc["cooler"] = "OFF";
-      //            }
-      //            size_t n = serializeJson(doc, buffer);
-      //            mqttClient.publish("/beer/data", buffer, n);
-      //            Serial.println();
-      //            serializeJsonPretty(doc, Serial);
-      //          }
-      //        }
-      //        else {
-      //          operating_mode = ERROR_MODE;  // Error state
-      //        }
-      //      }  // End millis
-      //      pulseLoop();
+      if (currentMillis - previousMillis >= READING_INTERVAL) {
+        previousMillis = currentMillis;
+        // Get latest temperature readings
+        //        if (!updateReadings(ALARM_THRESHOLD)) {
+        if (!getTemperatureSample(sensors, &aSample)) {
+          // Right shift existing samples
+          int i = SAMPLES;
+          while (--i) {
+            sample_buffer[i] = sample_buffer[i - 1];
+          }
+          sample_buffer[0] = aSample;  // Add new sample
+          printSampleBuffer();
+
+          // Calculate statistical temperatures (smoothing)
+          int statBeerTemp = statBeerTemperature(sample_buffer, SAMPLES);
+          int statAirTemp = statAirTemperature(sample_buffer, SAMPLES);
+
+          int screenMode = updateRelays(statBeerTemp, profilePtr);
+
+          brewScreen(statBeerTemp, screenMode);
+
+          Serial.print("Statistical Beer Temperature: ");
+          Serial.println(statBeerTemp);
+          Serial.print("Statistical Air Temperature: ");
+          Serial.println(statAirTemp);
+        }
+        else {
+          operating_mode = ERROR_MODE;
+        }
+
+        //          if (statBeerTemp != previousBeerTemp) {
+        //            previousBeerTemp = statBeerTemp;
+        //
+        //            doc["sensor"] = "fridge";
+        //            doc["error"] = "NONE";
+        //            doc["beer"] = statBeerTemp;
+        //            doc["air"] = statAirTemp;
+        //            if (heater_control) {
+        //              doc["heater"] = "ON";
+        //            }
+        //            else {
+        //              doc["heater"] = "OFF";
+        //            }
+        //            if (cooler_control) {
+        //              doc["cooler"] = "ON";
+        //            }
+        //            else {
+        //              doc["cooler"] = "OFF";
+        //            }
+        //            size_t n = serializeJson(doc, buffer);
+        //            mqttClient.publish("/beer/data", buffer, n);
+        //            Serial.println();
+        //            serializeJsonPretty(doc, Serial);
+        //          }
+        //        }
+
+      }  // End millis
+      pulseLoop();
       break;
 
     // Error mode (heater & cooler off)
@@ -270,18 +273,90 @@ void loop() {
   delay(10); // Short delay
 }  // End loop
 
+void failSafe() {
+  heater_control = off;
+  cooler_control = off;
+  onHeaterControlChange();
+  onCoolerControlChange();
+}
+
+int updateRelays(int temperature, process_profile *profile) {
+  if (temperature < profile->mintemp) {  // Too cold
+    cooler_control = off;  // Make sure cooler is off
+    heater_control = on;
+    displayScreen = 0;
+  }
+  else if (temperature >= profile->maxtemp - 15) {  // Too warm
+    heater_control = off;  // Make sure heater is off
+    cooler_control = on;
+    displayScreen = 2;
+  }
+  else {
+    heater_control = off;
+    cooler_control = off;
+    displayScreen = 1;
+  }
+  onHeaterControlChange();
+  onCoolerControlChange();
+  Serial.println(displayScreen);
+  return displayScreen;
+}
+
+void onHeaterControlChange() {
+  if (heater_control == on) {
+    carrier.Relay1.open();
+    heater_state_desc = "Heater: ON";
+    carrier.Relay2.close();
+    cooler_state_desc = "Cooler: OFF";
+  } else {
+    carrier.Relay1.close();
+    heater_state_desc = "Heater: OFF";
+  }
+  delay(50);
+}
+
+void onCoolerControlChange() {
+  if (cooler_control == on) {
+    carrier.Relay2.open();
+    cooler_state_desc = "Cooler: ON";
+    carrier.Relay1.close();
+    heater_state_desc = "Heater: OFF";
+  } else {
+    carrier.Relay2.close();
+    cooler_state_desc = "Cooler: OFF";
+  }
+  delay(50);
+}
+
 // Statistical mode
-int statMode(int a[], int n) {
+int statBeerTemperature(temperature_sample samples[], int n) {
   int maxValue = 0, maxCount = 0, i, j;
   for (i = 0; i < n; ++i) {
     int count = 0;
     for (j = 0; j < n; ++j) {
-      if (a[j] == a[i])
+      if (samples[j].beerTemperature == samples[i].beerTemperature)
         ++count;
     }
     if (count > maxCount) {
       maxCount = count;
-      maxValue = a[i];
+      maxValue = samples[i].beerTemperature;
+    }
+  }
+  return maxValue;
+}
+
+// Statistical mode
+int statAirTemperature(temperature_sample samples[], int n) {
+  int maxValue = 0, maxCount = 0, i, j;
+  for (i = 0; i < n; ++i) {
+    int count = 0;
+    for (j = 0; j < n; ++j) {
+      if (samples[j].airTemperature == samples[i].airTemperature)
+        ++count;
+    }
+    if (count > maxCount) {
+      maxCount = count;
+      maxValue = samples[i].airTemperature;
     }
   }
   return maxValue;
@@ -340,7 +415,7 @@ void errorScreen() {
   carrier.display.print("ERROR");
 }
 
-void brewScreen(float Temperature) {
+void brewScreen(int temperature, int displayScreen) {
   if (displayScreen == 0) {
     carrier.display.fillScreen(ST77XX_BLUE); //blue background
     carrier.leds.fill(blueColor, 0, 5);
@@ -352,6 +427,7 @@ void brewScreen(float Temperature) {
   }
 
   else if (displayScreen == 2) {
+    Serial.println(displayScreen);
     carrier.display.fillScreen(ST77XX_RED); //red background
     carrier.leds.fill(redColor, 0, 5);
   }
@@ -364,7 +440,7 @@ void brewScreen(float Temperature) {
   carrier.display.setTextColor(ST77XX_WHITE); //white text
   carrier.display.setTextSize(6); //medium sized text
   carrier.display.setCursor(40, 80);
-  carrier.display.print(String(Temperature / 10, 1));
+  carrier.display.print(String((float)(temperature / 10.0), 1));
   carrier.display.print("C");
 
   //carrier.display.setTextColor(ST77XX_YELLOW); //yellow text
@@ -375,59 +451,6 @@ void brewScreen(float Temperature) {
 
   carrier.display.setCursor(50, 170);
   carrier.display.print(cooler_state_desc);
-}
-
-void failSafe() {
-  heater_control = off;
-  cooler_control = off;
-  onHeaterControlChange();
-  onCoolerControlChange();
-}
-
-void updateBeerTemperature(int Temperature, process_profile *profile) {
-  if (Temperature < profile->mintemp) {  // Too cold
-    cooler_control = off;  // Make sure cooler is off
-    heater_control = on;
-    displayScreen = 0;
-  }
-  else if (Temperature >= profile->maxtemp - 15) {  // Too warm
-    heater_control = off;  // Make sure heater is off
-    cooler_control = on;
-    displayScreen = 2;
-  }
-  else {
-    heater_control = off;
-    cooler_control = off;
-    displayScreen = 1;
-  }
-  onHeaterControlChange();
-  onCoolerControlChange();
-}
-
-void onHeaterControlChange() {
-  if (heater_control == on) {
-    carrier.Relay1.open();
-    heater_state_desc = "Heater: ON";
-    carrier.Relay2.close();
-    cooler_state_desc = "Cooler: OFF";
-  } else {
-    carrier.Relay1.close();
-    heater_state_desc = "Heater: OFF";
-  }
-  delay(50);
-}
-
-void onCoolerControlChange() {
-  if (cooler_control == on) {
-    carrier.Relay2.open();
-    cooler_state_desc = "Cooler: ON";
-    carrier.Relay1.close();
-    heater_state_desc = "Heater: OFF";
-  } else {
-    carrier.Relay2.close();
-    cooler_state_desc = "Cooler: OFF";
-  }
-  delay(50);
 }
 
 void pulseLoop() {
@@ -465,7 +488,7 @@ int updateReadings(unsigned int maxError) {
 // Read both thermometers.
 // The thermometers struct only updates if both readings were successful.
 // Returns zero on success or a positive error code
-int getTemperatureSample(DallasTemperature _sensors, temperature_sample *sample) {
+int getTemperatureSample(DallasTemperature _sensors, temperature_sample * sample) {
   // Issue global temperature request to all devices on the bus
   Serial.print("Requesting temperatures...");
   _sensors.requestTemperatures(); // Send the command to get temperatures
