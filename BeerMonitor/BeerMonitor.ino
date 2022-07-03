@@ -31,7 +31,7 @@ struct process_profile {
 process_profile ferment = {"Ferment", 180, 210};
 process_profile finish = {"Finish", 100, 150};
 process_profile test = {"Test", 220, 240};
-process_profile *profilePtr = &ferment;  // Pointer to a brew
+process_profile *profilePtr = &ferment;  // Default brewing process
 
 MKRIoTCarrier carrier;
 unsigned int threshold = 4;
@@ -79,7 +79,7 @@ int beerTemperatures[SAMPLES];
 int airTemperatures[SAMPLES];
 
 // Name device mode of operation
-enum modes {MENU_MODE, PROCESS_MODE, ERROR_MODE};
+enum modes {MENU_MODE, SENSOR_INIT_MODE, PROCESS_MODE, ERROR_MODE};
 
 // Name different brewing processes
 enum buttonStates {FERMENT, FINISH, TEST, LOCK};
@@ -142,7 +142,8 @@ void loop() {
   }
 
   switch (operating_mode) {
-    case MENU_MODE: // Menu mode
+    // Menu mode - stay in this mode until a brewing process is selected
+    case MENU_MODE:
       if (buttonState != previousButtonState) {
         previousButtonState = buttonState;
         menuScreen(buttonState);
@@ -175,32 +176,34 @@ void loop() {
           Serial.println("Lock...");
           Serial.println(profilePtr->name);
           delay(1000);
-          operating_mode = PROCESS_MODE;
+          operating_mode = SENSOR_INIT_MODE;
         }
         Serial.println("Touched Down Button 4");
       }
       break;
 
-    //    case 1: // Init temperature arays
-    //      for (int i = 0; i < SAMPLES; i++) {
-    //        // Get latest temperature readings
-    //        if (!updateReadings(ALARM_THRESHOLD)) {
-    //          beerTemperatures[i] = myThermometers.beerTemperature;
-    //          airTemperatures[i] = myThermometers.airTemperature;
-    //        }
-    //        else {
-    //          operating_mode = 3;  // Error state
-    //        }
-    //        delay(1000);
-    //      } // End init
-    //      for (int j = 0; j < SAMPLES; j++) {
-    //        Serial.println(beerTemperatures[j]);
-    //        Serial.println(airTemperatures[j]);
-    //      }
-    //      operating_mode = 2;
-    //      break;
+    // Initialise temperature arrays before changing to process mode
+    case SENSOR_INIT_MODE:
+      for (int i = 0; i < SAMPLES; i++) {
+        // Get latest temperature readings
+        if (!updateReadings(ALARM_THRESHOLD)) {
+          beerTemperatures[i] = myThermometers.beerTemperature;
+          airTemperatures[i] = myThermometers.airTemperature;
+        }
+        else {
+          operating_mode = ERROR_MODE;
+        }
+        delay(1000);  // Delay between samples
+      } // End init
+      for (int j = 0; j < SAMPLES; j++) {
+        Serial.println(beerTemperatures[j]);
+        Serial.println(airTemperatures[j]);
+      }
+      operating_mode = PROCESS_MODE;
+      break;
 
-    case PROCESS_MODE:  // Brewing mode
+    // Run the selected brewing process for ever
+    case PROCESS_MODE:
       if (currentMillis - previousMillis >= READING_INTERVAL) {
         previousMillis = currentMillis;
 
@@ -259,7 +262,8 @@ void loop() {
       pulseLoop();
       break;
 
-    case ERROR_MODE:  // Error state (heater & cooler off)
+    // Error mode (heater & cooler off)
+    case ERROR_MODE:
       failSafe();
       errorScreen();
       Serial.println("Sound the alarm!");
