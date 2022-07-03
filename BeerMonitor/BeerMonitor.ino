@@ -207,6 +207,10 @@ void loop() {
         // Get latest temperature readings
         //        if (!updateReadings(ALARM_THRESHOLD)) {
         if (!getTemperatureSample(sensors, &aSample)) {
+          Serial.print("Beer Temperature: ");
+          Serial.println(aSample.beerTemperature);
+          Serial.print("Air Temperature: ");
+          Serial.println(aSample.airTemperature);
           // Right shift existing samples
           int i = SAMPLES;
           while (--i) {
@@ -487,30 +491,21 @@ int updateReadings(unsigned int maxError) {
 }
 
 // Read both thermometers.
-// The thermometers struct only updates if both readings were successful.
-// Returns zero on success or a positive error code
+// Temperature sample only updates if both readings were successful.
 int getTemperatureSample(DallasTemperature _sensors, temperature_sample * sample) {
-  // Issue global temperature request to all devices on the bus
-  Serial.print("Requesting temperatures...");
   _sensors.requestTemperatures(); // Send the command to get temperatures
-  Serial.println("DONE");
+
   // After the temperatures are read, we can extract them here using the device address
   float beerTempC = _sensors.getTempC(beerThermometer);
-
   // Check if reading was successful
-  if ((beerTempC != DEVICE_DISCONNECTED_C) && (beerTempC < 85.0)) {  // Device error
-    sample->beerTemperature = beerTempC * 10;  // Convert to int
-    Serial.print("Beer Temperature: ");
-    Serial.println( sample->beerTemperature);
+  if ((beerTempC != DEVICE_DISCONNECTED_C) && (beerTempC < 85.0)) {
+    sample->beerTemperature = (int)(beerTempC * 10);  // Convert to int
   }
   else return BEER_THERMOMETER_FAILUE;
 
   float airTempC = _sensors.getTempC(airThermometer);
-
   if ((airTempC != DEVICE_DISCONNECTED_C) && (airTempC < 85.0)) {
-    sample->airTemperature = airTempC * 10;
-    Serial.print("Air Temperature: ");
-    Serial.println(sample->airTemperature);
+    sample->airTemperature = (int)(airTempC * 10);
   }
   else return AIR_THERMOMETER_FAILURE;
 
