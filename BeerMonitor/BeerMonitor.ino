@@ -368,31 +368,31 @@ int statAirTemperature(temperature_sample samples[], int n) {
 boolean reconnect() {
   if (mqttClient.connect("arduinoClient")) {
     // Once connected, publish an announcement...
-    mqttClient.publish("/beer", "hello world");
+    mqttClient.publish("/beer", "New connection");
   }
   return mqttClient.connected();
 }
 
 void menuScreen(unsigned int menuItem) {
-  carrier.display.fillScreen(ST77XX_BLUE); //blue background
+  carrier.display.fillScreen(ST77XX_BLUE);
   carrier.display.setTextSize(3); //medium sized text
   carrier.display.setTextColor(ST77XX_BLACK);
 
-  if (menuItem == 0) {
+  if (menuItem == FERMENT) {
     carrier.display.setTextColor(ST77XX_WHITE);
   }
   carrier.display.setCursor(60, 50);
   carrier.display.print(ferment.name);
   carrier.display.setTextColor(ST77XX_BLACK);
 
-  if (menuItem == 1) {
+  if (menuItem == FINISH) {
     carrier.display.setTextColor(ST77XX_WHITE);
   }
   carrier.display.setCursor(60, 80);
   carrier.display.print(finish.name);
   carrier.display.setTextColor(ST77XX_BLACK);
 
-  if (menuItem == 2) {
+  if (menuItem == TEST) {
     carrier.display.setTextColor(ST77XX_WHITE);
   }
   carrier.display.setCursor(60, 110);
@@ -401,7 +401,7 @@ void menuScreen(unsigned int menuItem) {
 }
 
 void startScreen() {
-  carrier.display.fillScreen(ST77XX_BLUE); //blue background
+  carrier.display.fillScreen(ST77XX_BLUE);
   carrier.display.setTextSize(4); //medium sized text
   carrier.display.setTextColor(ST77XX_WHITE);
   carrier.display.setCursor(20, 100);
@@ -411,7 +411,7 @@ void startScreen() {
 void errorScreen() {
   carrier.leds.fill(0, 0, 0);
   carrier.leds.show();
-  carrier.display.fillScreen(ST77XX_ORANGE); //blue background
+  carrier.display.fillScreen(ST77XX_ORANGE);
   carrier.display.setTextSize(4); //medium sized text
   carrier.display.setTextColor(ST77XX_WHITE);
   carrier.display.setCursor(50, 100);
@@ -420,33 +420,32 @@ void errorScreen() {
 
 void brewScreen(int temperature, int relayState) {
   if (relayState == HEATING) {
-    carrier.display.fillScreen(ST77XX_BLUE); //blue background
+    carrier.display.fillScreen(ST77XX_BLUE);
     carrier.leds.fill(blueColor, 0, 5);
   }
 
   else if (relayState == NORMAL) {
-    carrier.display.fillScreen(ST77XX_GREEN); //green background
+    carrier.display.fillScreen(ST77XX_GREEN);
     carrier.leds.fill(greenColor, 0, 5);
   }
 
   else if (relayState == COOLING) {
-    carrier.display.fillScreen(ST77XX_RED); //red background
+    carrier.display.fillScreen(ST77XX_RED);
     carrier.leds.fill(redColor, 0, 5);
   }
 
-  carrier.display.setTextColor(ST77XX_WHITE); //white text
+  carrier.display.setTextColor(ST77XX_WHITE);
   carrier.display.setTextSize(3); //medium sized text
   carrier.display.setCursor(60, 40);
   carrier.display.print(profilePtr->name);  // Whats brewing!
 
-  carrier.display.setTextColor(ST77XX_WHITE); //white text
+  carrier.display.setTextColor(ST77XX_WHITE);
   carrier.display.setTextSize(6); //medium sized text
   carrier.display.setCursor(40, 80);
   carrier.display.print(String((float)(temperature / 10.0), 1));
   carrier.display.print("C");
 
-  //carrier.display.setTextColor(ST77XX_YELLOW); //yellow text
-  carrier.display.setTextColor(ST77XX_BLACK); //yellow text
+  carrier.display.setTextColor(ST77XX_BLACK);
   carrier.display.setTextSize(2); //medium sized text
   carrier.display.setCursor(50, 150);
   carrier.display.print(heater_state_desc);
