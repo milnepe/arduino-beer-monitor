@@ -6,9 +6,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-//#define READING_INTERVAL 30000 // ms
-#define READING_INTERVAL 5000 // ms
-#define WIFI_INTERVAL 30000 // ms
+#define READING_INTERVAL 30000 // ms
 #define SAMPLES 6
 #define ALARM_THRESHOLD 5  // Number of consecutive error readings
 
@@ -93,19 +91,16 @@ unsigned int operating_mode = 0;  // Menu mode
 unsigned int buttonState = FERMENT;  // Default state
 unsigned int previousButtonState = FINISH;
 unsigned long previousMillis = 0;
-unsigned long prevConnectMillis = 0;
-float previousBeerTemp = -127.0;
-
-long lastReconnectAttempt = 0;
 
 StaticJsonDocument<128> doc;
 char buffer[128];
 
 void setup() {
   Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect
-  }
+  //  while (!Serial) {
+  //    ; // wait for serial port to connect
+  //  }
+  delay(2000);
   Serial.println("Beer Monitor");
   CARRIER_CASE = true;
 
@@ -117,7 +112,6 @@ void setup() {
   sensors.begin();
   delay(5000);
 
-  // Print firmware version on the module
   String fv = WiFi.firmwareVersion();
   String latestFv;
   Serial.print("Firmware version installed: ");
@@ -261,7 +255,7 @@ void loop() {
           mqttClient.publish("/beer/data", buffer, n);
           Serial.println();
           serializeJsonPretty(doc, Serial);
-          Serial.println();          
+          Serial.println();
         }
         else {
           operating_mode = ERROR_MODE;
